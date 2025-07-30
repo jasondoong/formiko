@@ -225,6 +225,7 @@ setup(
         ("share/applications", ["formiko.desktop", "formiko-vim.desktop"]),
         ("share/metainfo", ["formiko.metainfo.xml"]),
         ("share/formiko/icons", ["icons/formiko.svg"]),
+        ("share/formiko", ["formiko/data/jsonfold.css", "formiko/data/jsonfold.js"]),
         *icons_data(),
     ],
     keywords=["doc", "html", "rst", "docutils", "md", "markdown", "editor"],

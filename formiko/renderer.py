@@ -1,7 +1,6 @@
 """Webkit based renderer."""
 
 from io import StringIO
-from json import dumps, loads
 from os.path import exists, splitext
 from traceback import format_exc
 
@@ -38,6 +37,7 @@ from gi.repository.WebKit2 import (
 )
 
 from formiko.dialogs import FileNotFoundDialog
+from formiko.preview.json import JsonPreview
 from formiko.sourceview import LANGS
 
 try:
@@ -68,10 +68,6 @@ class HtmlPreview:
     """Dummy html preview class."""
 
 
-class JSONPreview:
-    """Dummy json preview class."""
-
-
 class Env:
     """Empty class for env overriding."""
 
@@ -100,7 +96,7 @@ PARSERS = {
     "json": {
         "key": "json",
         "title": "JSON preview",
-        "class": JSONPreview,
+        "class": JsonPreview,
     },
 }
 
@@ -394,22 +390,13 @@ class Renderer(Overlay):
                 html = NOT_FOUND.format(**self.__parser)
             elif self.__writer["class"] is None:
                 html = NOT_FOUND.format(**self.__writer)
-            elif issubclass(self.__parser["class"], JSONPreview):
+            elif issubclass(self.__parser["class"], JsonPreview):
                 try:
-                    json = loads(self.src)
-                    return (
-                        False,
-                        dumps(
-                            json,
-                            sort_keys=True,
-                            ensure_ascii=False,
-                            indent=self.tab_width,
-                            separators=(",", ": "),
-                        ),
-                        "application/json",
-                    )
+                    parser = self.parser_instance or self.__parser["class"]()
+                    html = parser.to_html(self.src, self.tab_width)
                 except ValueError as e:
                     return False, DATA_ERROR % ("JSON", str(e)), "text/html"
+                return True, html, "text/html"
             elif not issubclass(self.__parser["class"], HtmlPreview):
                 settings = {
                     "warning_stream": StringIO(),
