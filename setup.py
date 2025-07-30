@@ -6,8 +6,6 @@ from os import listdir, makedirs, path
 from shutil import rmtree
 from typing import ClassVar
 
-from docutils.core import publish_string
-from docutils.writers.manpage import Writer
 from setuptools import Command, setup
 from setuptools.command.build import build
 from setuptools.command.install import install
@@ -40,6 +38,9 @@ def icons_data():
 
 def man_page(writer, src, dst):
     """Generate man page from rst source."""
+    from docutils.core import publish_string
+    from docutils.writers.manpage import Writer
+
     with open(src, encoding="utf-8") as source:
         rst = source.read().format(version=__version__)
     with zopen(dst, "wb") as destination:
@@ -249,16 +250,20 @@ setup(
         "Topic :: Text Processing :: Markup :: HTML",
         "Topic :: Utilities",
     ],
-    requires=["docutils>=0.12", "PyGObject"],
-    extra_requires=[
-        "pynvim",
-        "m2r",
-        "Pygments",
-        "docutils-tinyhtmlwriter",
-        "docutils-htmlwriter",
-        "docutils-html5-writer",
+    install_requires=[
+        "docutils>=0.12",
+        "PyGObject",
     ],
-    install_requires=["docutils>=0.12"],
+    extras_require={
+        "dev": [
+            "pynvim",
+            "m2r",
+            "Pygments",
+            "docutils-tinyhtmlwriter",
+            "docutils-htmlwriter",
+            "docutils-html5-writer",
+        ]
+    },
     entry_points={
         "gui_scripts": [
             "formiko = formiko.__main__:main",
@@ -272,3 +277,4 @@ setup(
         "check_version": CheckVersion,
     },
 )
+
