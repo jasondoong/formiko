@@ -36,7 +36,7 @@ def icons_data():
     return icons
 
 
-def man_page(writer, src, dst):
+def man_page(src, dst):
     """Generate man page from rst source."""
     from docutils.core import publish_string
     from docutils.writers.manpage import Writer
@@ -44,7 +44,7 @@ def man_page(writer, src, dst):
     with open(src, encoding="utf-8") as source:
         rst = source.read().format(version=__version__)
     with zopen(dst, "wb") as destination:
-        destination.write(publish_string(source=rst, writer=writer))
+        destination.write(publish_string(source=rst, writer=Writer()))
 
 
 class Build(build):
@@ -66,14 +66,12 @@ class Build(build):
         logging.info("building man pages")
         if self.dry_run:
             return
-
-        writer = Writer()
         if not path.exists(self.man_base):
             makedirs(self.man_base)
         for page in ("formiko", "formiko-vim"):
             dst = f"{self.man_base}/{page}.1.gz"
             logging.info("manpage %s.rst -> %s", page, dst)
-            man_page(writer, page + ".rst", dst)
+            man_page(page + ".rst", dst)
 
 
 class CleanMan(Command):
