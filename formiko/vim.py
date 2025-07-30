@@ -78,7 +78,7 @@ class VimEditor(Vte.Terminal):
 
     def get_vim_get_buffer(self, count):
         """Retun text from vim."""
-        buff = self.vim_remote_expr("getline(0, %d)" % count)
+        buff = self.vim_remote_expr(f"getline(0, {count})")
         return "\n".join(buff)
 
     def get_vim_pos(self):

@@ -38,8 +38,8 @@ def icons_data():
 
 def man_page(src, dst):
     """Generate man page from rst source."""
-    from docutils.core import publish_string
-    from docutils.writers.manpage import Writer
+    from docutils.core import publish_string  # noqa: PLC0415
+    from docutils.writers.manpage import Writer  # noqa: PLC0415
 
     with open(src, encoding="utf-8") as source:
         rst = source.read().format(version=__version__)
@@ -175,7 +175,7 @@ class CheckVersion(Command):
 
     def run(self):
         # pylint: disable=import-outside-toplevel
-        from packaging.version import Version
+        from packaging.version import Version  # noqa: PLC0415
 
         pkg_version = Version(__version__)
         logging.info("package version is %s", pkg_version)
@@ -215,7 +215,7 @@ setup(
     author="Ondrej Tuma",
     author_email="mcbig@zeropage.cz",
     url=__url__,
-    packages=["formiko"],
+    packages=["formiko", "formiko.preview"],
     data_files=[
         (
             "share/doc/formiko",
@@ -224,7 +224,10 @@ setup(
         ("share/applications", ["formiko.desktop", "formiko-vim.desktop"]),
         ("share/metainfo", ["formiko.metainfo.xml"]),
         ("share/formiko/icons", ["icons/formiko.svg"]),
-        ("share/formiko", ["formiko/data/jsonfold.css", "formiko/data/jsonfold.js"]),
+        (
+            "share/formiko",
+            ["formiko/data/jsonfold.css", "formiko/data/jsonfold.js"],
+        ),
         *icons_data(),
     ],
     keywords=["doc", "html", "rst", "docutils", "md", "markdown", "editor"],
@@ -260,7 +263,7 @@ setup(
             "docutils-tinyhtmlwriter",
             "docutils-htmlwriter",
             "docutils-html5-writer",
-        ]
+        ],
     },
     entry_points={
         "gui_scripts": [

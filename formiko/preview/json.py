@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from html import escape
+from importlib.resources import files
 from json import dumps, loads
 from typing import Any
 
@@ -12,6 +13,8 @@ class JsonPreview:
 
     def __init__(self, collapse_lines: int = 50) -> None:
         self.collapse_lines = collapse_lines
+        self._css: str | None = None
+        self._js: str | None = None
 
     def to_html(self, text: str, tab_width: int = 2) -> str:
         """Return HTML representation of JSON ``text``."""
@@ -25,16 +28,23 @@ class JsonPreview:
         line_count = pretty.count("\n") + 1
         collapse = line_count > self.collapse_lines
         body = self._value_to_html(obj, collapse, 0)
+        css, js = self._resources()
         return (
             "<html><head><meta charset='utf-8'>"
-            "<link rel='stylesheet' "
-            "href='resource:///org/formiko/jsonfold.css'>"
+            f"<style>{css}</style>"
             "</head><body><pre>"
             + body
             + "</pre>"
-            + "<script src='resource:///org/formiko/jsonfold.js'></script>"
+            f"<script>{js}</script>"
             "</body></html>"
         )
+
+    def _resources(self) -> tuple[str, str]:
+        if self._css is None or self._js is None:
+            data_dir = files("formiko.data")
+            self._css = (data_dir / "jsonfold.css").read_text(encoding="utf-8")
+            self._js = (data_dir / "jsonfold.js").read_text(encoding="utf-8")
+        return self._css, self._js
 
     def _value_to_html(self, value: Any, collapse: bool, level: int) -> str:
         if isinstance(value, dict):
