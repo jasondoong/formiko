@@ -215,7 +215,7 @@ setup(
     author="Ondrej Tuma",
     author_email="mcbig@zeropage.cz",
     url=__url__,
-    packages=["formiko"],
+    packages=["formiko", "formiko.preview"],
     data_files=[
         (
             "share/doc/formiko",
