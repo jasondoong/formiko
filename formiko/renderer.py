@@ -224,6 +224,7 @@ class Renderer(Overlay):
         self.fgcolor = "#000"
 
         self.webview = WebView()
+        self.webview.get_settings().set_enable_developer_extras(True)
         self.webview.connect("mouse-target-changed", self.on_mouse)
         self.webview.connect("context-menu", self.on_context_menu)
         self.webview.connect("button-release-event", self.on_button_release)
