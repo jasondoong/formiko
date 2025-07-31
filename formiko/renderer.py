@@ -217,6 +217,29 @@ window.scrollY/(document.documentElement.scrollHeight-window.innerHeight)
 
 MARKUP = """<span background="#ddd"> %s </span>"""
 
+# NOTE: json-formatter-js library is normally embedded here. The actual
+# content could not be fetched in this environment.
+JSON_FORMATTER_JS = """/* json-formatter-js library code should be here */"""
+
+JSON_FORMATTER_CSS = """/* json-formatter-js CSS should be here */"""
+
+JSON_VIEW_TEMPLATE = """<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset='utf-8'>
+    <style>{css}</style>
+  </head>
+  <body>
+    <div id='json-container'></div>
+    <script>{js}</script>
+    <script>
+      const data = {json};
+      const formatter = new JSONFormatter(data);
+      document.getElementById('json-container').appendChild(formatter.render());
+    </script>
+  </body>
+</html>"""
+
 
 class Renderer(Overlay):
     """Renderer widget, mainly based on Webkit."""
@@ -396,20 +419,16 @@ class Renderer(Overlay):
                 html = NOT_FOUND.format(**self.__writer)
             elif issubclass(self.__parser["class"], JSONPreview):
                 try:
-                    json = loads(self.src)
-                    return (
-                        False,
-                        dumps(
-                            json,
-                            sort_keys=True,
-                            ensure_ascii=False,
-                            indent=self.tab_width,
-                            separators=(",", ": "),
-                        ),
-                        "application/json",
-                    )
+                    json_data = loads(self.src)
                 except ValueError as e:
                     return False, DATA_ERROR % ("JSON", str(e)), "text/html"
+                else:
+                    html = JSON_VIEW_TEMPLATE.format(
+                        css=JSON_FORMATTER_CSS,
+                        js=JSON_FORMATTER_JS,
+                        json=dumps(json_data, ensure_ascii=False),
+                    )
+                    return False, html, "text/html"
             elif not issubclass(self.__parser["class"], HtmlPreview):
                 settings = {
                     "warning_stream": StringIO(),
