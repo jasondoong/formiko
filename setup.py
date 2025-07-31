@@ -6,9 +6,7 @@ from os import listdir, makedirs, path
 from shutil import rmtree
 from typing import ClassVar
 
-from docutils.core import publish_string
-from docutils.writers.manpage import Writer
-from setuptools import Command, setup
+from setuptools import Command, find_packages, setup
 from setuptools.command.build import build
 from setuptools.command.install import install
 
@@ -38,12 +36,15 @@ def icons_data():
     return icons
 
 
-def man_page(writer, src, dst):
+def man_page(src, dst):
     """Generate man page from rst source."""
+    from docutils.core import publish_string  # noqa: PLC0415
+    from docutils.writers.manpage import Writer  # noqa: PLC0415
+
     with open(src, encoding="utf-8") as source:
         rst = source.read().format(version=__version__)
     with zopen(dst, "wb") as destination:
-        destination.write(publish_string(source=rst, writer=writer))
+        destination.write(publish_string(source=rst, writer=Writer()))
 
 
 class Build(build):
@@ -65,14 +66,12 @@ class Build(build):
         logging.info("building man pages")
         if self.dry_run:
             return
-
-        writer = Writer()
         if not path.exists(self.man_base):
             makedirs(self.man_base)
         for page in ("formiko", "formiko-vim"):
             dst = f"{self.man_base}/{page}.1.gz"
             logging.info("manpage %s.rst -> %s", page, dst)
-            man_page(writer, page + ".rst", dst)
+            man_page(page + ".rst", dst)
 
 
 class CleanMan(Command):
@@ -176,7 +175,7 @@ class CheckVersion(Command):
 
     def run(self):
         # pylint: disable=import-outside-toplevel
-        from packaging.version import Version
+        from packaging.version import Version  # noqa: PLC0415
 
         pkg_version = Version(__version__)
         logging.info("package version is %s", pkg_version)
@@ -216,7 +215,10 @@ setup(
     author="Ondrej Tuma",
     author_email="mcbig@zeropage.cz",
     url=__url__,
-    packages=["formiko"],
+    packages=find_packages(),
+    package_data={
+        "formiko.data": ["*.js", "*.css"],
+    },
     data_files=[
         (
             "share/doc/formiko",
@@ -225,6 +227,10 @@ setup(
         ("share/applications", ["formiko.desktop", "formiko-vim.desktop"]),
         ("share/metainfo", ["formiko.metainfo.xml"]),
         ("share/formiko/icons", ["icons/formiko.svg"]),
+        (
+            "share/formiko",
+            ["formiko/data/jsonfold.css", "formiko/data/jsonfold.js"],
+        ),
         *icons_data(),
     ],
     keywords=["doc", "html", "rst", "docutils", "md", "markdown", "editor"],
@@ -248,16 +254,20 @@ setup(
         "Topic :: Text Processing :: Markup :: HTML",
         "Topic :: Utilities",
     ],
-    requires=["docutils>=0.12", "PyGObject"],
-    extra_requires=[
-        "pynvim",
-        "m2r",
-        "Pygments",
-        "docutils-tinyhtmlwriter",
-        "docutils-htmlwriter",
-        "docutils-html5-writer",
+    install_requires=[
+        "docutils>=0.12",
+        "PyGObject",
     ],
-    install_requires=["docutils>=0.12"],
+    extras_require={
+        "dev": [
+            "pynvim",
+            "m2r",
+            "Pygments",
+            "docutils-tinyhtmlwriter",
+            "docutils-htmlwriter",
+            "docutils-html5-writer",
+        ],
+    },
     entry_points={
         "gui_scripts": [
             "formiko = formiko.__main__:main",
@@ -271,3 +281,4 @@ setup(
         "check_version": CheckVersion,
     },
 )
+

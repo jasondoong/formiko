@@ -159,7 +159,7 @@ class Statusbar(Gtk.Box):
 
         self.tab_popover = self.create_tab_popover(preferences)
         self.width_btn = StatusMenuButton(
-            "Tabulator width %d" % preferences.tab_width,
+            f"Tabulator width {preferences.tab_width}",
             self.tab_popover,
         )
         self.pack_end(self.width_btn, False, False, 1)

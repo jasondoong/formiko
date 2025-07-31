@@ -1,7 +1,6 @@
 """Webkit based renderer."""
 
 from io import StringIO
-from json import dumps, loads
 from os.path import exists, splitext
 from traceback import format_exc
 
@@ -38,6 +37,7 @@ from gi.repository.WebKit2 import (
 )
 
 from formiko.dialogs import FileNotFoundDialog
+from formiko.preview.json import JsonPreview
 from formiko.sourceview import LANGS
 
 try:
@@ -68,10 +68,6 @@ class HtmlPreview:
     """Dummy html preview class."""
 
 
-class JSONPreview:
-    """Dummy json preview class."""
-
-
 class Env:
     """Empty class for env overriding."""
 
@@ -100,7 +96,7 @@ PARSERS = {
     "json": {
         "key": "json",
         "title": "JSON preview",
-        "class": JSONPreview,
+        "class": JsonPreview,
     },
 }
 
@@ -228,6 +224,7 @@ class Renderer(Overlay):
         self.fgcolor = "#000"
 
         self.webview = WebView()
+        self.webview.get_settings().set_enable_developer_extras(True)
         self.webview.connect("mouse-target-changed", self.on_mouse)
         self.webview.connect("context-menu", self.on_context_menu)
         self.webview.connect("button-release-event", self.on_button_release)
@@ -316,18 +313,15 @@ class Renderer(Overlay):
         return True  # disable context menu for now
 
     def on_button_release(self, webview, event):
-        """Catch release-button only when try to follow link.
-
-        Context menu is catch by webview before this callback.
-        """
-        if event.button == self.context_button:
-            return True
-        if self.link_uri:
-            if self.link_uri.startswith("file://"):  # try to open source
+        """Open links and let other clicks propagate."""
+        if event.button != self.context_button and self.link_uri:
+            if self.link_uri.startswith("file://"):
                 self.find_and_opendocument(self.link_uri[7:].split("#")[0])
             else:
                 show_uri_on_window(None, self.link_uri, 0)
-        return True
+            return True
+
+        return False
 
     def find_and_opendocument(self, file_path):
         """Find file on disk and open it."""
@@ -394,22 +388,13 @@ class Renderer(Overlay):
                 html = NOT_FOUND.format(**self.__parser)
             elif self.__writer["class"] is None:
                 html = NOT_FOUND.format(**self.__writer)
-            elif issubclass(self.__parser["class"], JSONPreview):
+            elif issubclass(self.__parser["class"], JsonPreview):
                 try:
-                    json = loads(self.src)
-                    return (
-                        False,
-                        dumps(
-                            json,
-                            sort_keys=True,
-                            ensure_ascii=False,
-                            indent=self.tab_width,
-                            separators=(",", ": "),
-                        ),
-                        "application/json",
-                    )
+                    parser = self.parser_instance or self.__parser["class"]()
+                    html = parser.to_html(self.src, self.tab_width)
                 except ValueError as e:
                     return False, DATA_ERROR % ("JSON", str(e)), "text/html"
+                return True, html, "text/html"
             elif not issubclass(self.__parser["class"], HtmlPreview):
                 settings = {
                     "warning_stream": StringIO(),

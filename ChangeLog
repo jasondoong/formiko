@@ -7,6 +7,7 @@ Version dev
   * remove deprecated webkit2 4.0
   * Neovim support (formiko-vim)
     - new vte 2.91 dependency
+  * JSON preview: add collapsible folding view (closes #XX)
 
 
 Version 1.5.0
