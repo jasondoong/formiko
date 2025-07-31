@@ -1,8 +1,13 @@
 body{font-family:monospace}
 .jblock{margin-left:1em}
-.jblock>.jtoggler{cursor:pointer;margin-right:0.2em}
+.jblock>.jtoggler{
+  cursor:pointer;
+  margin-right:0.2em;
+  display:inline-block;
+  width:1em;
+}
 .jblock.collapsed>.children{display:none}
-.jtoggler::before{content:"\25bc";display:inline-block;width:1em}
+.jtoggler::before{content:"\25bc";display:block}
 .jblock.collapsed>.jtoggler::before{content:"\25b6"}
 .jkey{color:#922}
 .jstr{color:#070}
