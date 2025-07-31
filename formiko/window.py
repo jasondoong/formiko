@@ -7,7 +7,7 @@ from os.path import splitext
 from threading import Thread
 from traceback import print_exc
 
-from gi.repository import Gio, GLib, Gtk
+from gi.repository import Gdk, Gio, GLib, Gtk
 
 from formiko.dialogs import (
     FileOpenDialog,
@@ -61,6 +61,9 @@ class AppWindow(Gtk.ApplicationWindow):
         self.preferences = UserPreferences()
         super().__init__()
         self.create_renderer()
+        self.webview = self.renderer.webview
+        self.webview.get_settings().set_enable_developer_extras(True)
+        self.connect("key-press-event", self.on_key_press)
         self.actions()
         self.connect("delete-event", self.on_delete)
         self.set_titlebar(self.create_headerbar())
@@ -784,6 +787,12 @@ class AppWindow(Gtk.ApplicationWindow):
         except BaseException:
             print_exc()
         GLib.timeout_add(500, self.check_in_thread)
+
+    def on_key_press(self, widget, event):
+        """Show Web Inspector when F12 is pressed."""
+        if event.keyval == Gdk.KEY_F12:
+            inspector = self.webview.get_inspector()
+            inspector.show()
 
     @property
     def file_path(self):
