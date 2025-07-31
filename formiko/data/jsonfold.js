@@ -1,3 +1,4 @@
+console.debug("jsonfold script loaded");
 document.addEventListener('click', (e) => {
   const toggler = e.target.closest('.jtoggler');
   if (!toggler) return;
