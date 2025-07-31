@@ -216,9 +216,7 @@ setup(
     author_email="mcbig@zeropage.cz",
     url=__url__,
     packages=find_packages(),
-    package_data={
-        "formiko.data": ["*.js", "*.css"],
-    },
+    package_data={},
     data_files=[
         (
             "share/doc/formiko",
@@ -227,10 +225,6 @@ setup(
         ("share/applications", ["formiko.desktop", "formiko-vim.desktop"]),
         ("share/metainfo", ["formiko.metainfo.xml"]),
         ("share/formiko/icons", ["icons/formiko.svg"]),
-        (
-            "share/formiko",
-            ["formiko/data/jsonfold.css", "formiko/data/jsonfold.js"],
-        ),
         *icons_data(),
     ],
     keywords=["doc", "html", "rst", "docutils", "md", "markdown", "editor"],
