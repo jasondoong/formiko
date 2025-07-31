@@ -6,7 +6,7 @@ from os import listdir, makedirs, path
 from shutil import rmtree
 from typing import ClassVar
 
-from setuptools import Command, setup
+from setuptools import Command, find_packages, setup
 from setuptools.command.build import build
 from setuptools.command.install import install
 
@@ -215,7 +215,10 @@ setup(
     author="Ondrej Tuma",
     author_email="mcbig@zeropage.cz",
     url=__url__,
-    packages=["formiko", "formiko.preview", "formiko.data"],
+    packages=find_packages(),
+    package_data={
+        "formiko.data": ["*.js", "*.css"],
+    },
     data_files=[
         (
             "share/doc/formiko",
