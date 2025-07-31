@@ -1,7 +1,6 @@
 """Webkit based renderer."""
 
 from io import StringIO
-from json import dumps, loads
 from os.path import exists, splitext
 from traceback import format_exc
 
@@ -38,6 +37,7 @@ from gi.repository.WebKit2 import (
 )
 
 from formiko.dialogs import FileNotFoundDialog
+from formiko.preview import JSONPreview, HtmlPreview
 from formiko.sourceview import LANGS
 
 try:
@@ -62,14 +62,6 @@ try:
 
 except ImportError:
     Mark2Resturctured = None
-
-
-class HtmlPreview:
-    """Dummy html preview class."""
-
-
-class JSONPreview:
-    """Dummy json preview class."""
 
 
 class Env:
@@ -394,23 +386,12 @@ class Renderer(Overlay):
                 html = NOT_FOUND.format(**self.__parser)
             elif self.__writer["class"] is None:
                 html = NOT_FOUND.format(**self.__writer)
-            elif issubclass(self.__parser["class"], JSONPreview):
-                try:
-                    json = loads(self.src)
-                    return (
-                        False,
-                        dumps(
-                            json,
-                            sort_keys=True,
-                            ensure_ascii=False,
-                            indent=self.tab_width,
-                            separators=(",", ": "),
-                        ),
-                        "application/json",
-                    )
-                except ValueError as e:
-                    return False, DATA_ERROR % ("JSON", str(e)), "text/html"
-            elif not issubclass(self.__parser["class"], HtmlPreview):
+            elif isinstance(self.parser_instance, (JSONPreview, HtmlPreview)):
+                html, mime_type = self.parser_instance(
+                    self.src, tab_width=self.tab_width
+                )
+                return False, html, mime_type
+            else:
                 settings = {
                     "warning_stream": StringIO(),
                     "embed_stylesheet": True,
