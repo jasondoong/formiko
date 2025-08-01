@@ -1,8 +1,12 @@
 """Webkit based renderer."""
 
+from concurrent.futures import ThreadPoolExecutor
+from html import escape
 from io import StringIO
+from json import dumps, loads
 from os.path import exists, splitext
 from traceback import format_exc
+from typing import Any
 
 from docutils import DataError
 from docutils.core import publish_string
@@ -10,6 +14,7 @@ from docutils.parsers.rst import Parser as RstParser
 from docutils.writers.html4css1 import Writer as Writer4css1
 from docutils.writers.pep_html import Writer as WriterPep
 from docutils.writers.s5_html import Writer as WriterS5
+from gi.repository import GLib, Gtk
 from gi.repository.GLib import (
     MAXUINT,
     Bytes,
@@ -22,6 +27,8 @@ from gi.repository.GLib import (
 from gi.repository.Gtk import (
     Align,
     Label,
+    MessageDialog,
+    MessageType,
     Overlay,
     Settings,
     StateFlags,
@@ -35,9 +42,12 @@ from gi.repository.WebKit2 import (
     PrintOperation,
     WebView,
 )
+from importlib.resources import files
+from jsonpath_ng import path as jpath
+from jsonpath_ng.exceptions import JsonPathParserError
+from jsonpath_ng.ext import parse
 
 from formiko.dialogs import FileNotFoundDialog
-from formiko.preview.json import JsonPreview
 from formiko.sourceview import LANGS
 
 try:
@@ -62,6 +72,250 @@ try:
 
 except ImportError:
     Mark2Resturctured = None
+
+
+_EXECUTOR = ThreadPoolExecutor(max_workers=2)
+
+
+class JsonPreview:
+    """
+    Manages parsing, filtering, and rendering of JSON data into a
+    collapsible and highlighted HTML preview.
+    """
+
+    def __init__(self, collapse_lines: int = 50) -> None:
+        self.collapse_lines = collapse_lines
+        self._css: str | None = None
+        self._js: str | None = None
+        self._json_data: Any = None
+        self.webview: WebView | None = None
+        self._win: Gtk.Window | None = None
+        self._tab_width = 2
+        self.filter_callback = None
+
+    def to_html(self, text: str, tab_width: int = 2) -> str:
+        """
+        Parses JSON text and returns the initial full HTML representation.
+        The parsed data is stored for later filtering.
+        """
+        self._json_data = loads(text)
+        self._tab_width = tab_width
+        return self._generate_html(self._json_data)
+
+    def _generate_html(self, data: Any) -> str:
+        """Generates the full HTML document for the given JSON data."""
+        pretty = dumps(
+            data,
+            indent=self._tab_width,
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        line_count = pretty.count("\n") + 1
+        collapse = line_count > self.collapse_lines
+        body = self._value_to_html(data, collapse, 0, "")
+        css, js = self._resources()
+        return (
+            "<html><head><meta charset='utf-8'>"
+            f"<style>{css}</style>"
+            "</head><body><pre>"
+            + body
+            + "</pre>"
+            f"<script>{js}</script>"
+            "</body></html>"
+        )
+
+    def _resources(self) -> tuple[str, str]:
+        if self._css is None or self._js is None:
+            data_dir = files("formiko.data")
+            self._css = (data_dir / "jsonfold.css").read_text(encoding="utf-8")
+            self._js = (data_dir / "jsonfold.js").read_text(encoding="utf-8")
+        return self._css, self._js
+
+    def _value_to_html(
+        self,
+        value: Any,
+        collapse: bool,
+        level: int,
+        path: str,
+    ) -> str:
+        # Generate string path that matches jsonpath-ng's str(full_path)
+        if isinstance(value, dict):
+            cls = ["jblock"]
+            if collapse and level > 0:
+                cls.append("collapsed")
+            items = []
+            for _key, val in value.items():
+                # jsonpath-ng uses dot for fields
+                new_path = f"{path}.{_key}" if path else _key
+                items.append(
+                    '<div class="jitem">'
+                    '<span class="jkey">'
+                    f'"{escape(str(_key))}"'
+                    "</span>: "
+                    f"{self._value_to_html(val, collapse, level + 1, new_path)}"
+                    "</div>"
+                )
+            children = "".join(items)
+            return (
+                f'<div class="{ " ".join(cls) }" data-jpath="{path}">'
+                "<span class='jtoggler'></span>{"
+                f"<div class='children'>{children}</div>}}</div>"
+            )
+        if isinstance(value, list):
+            cls = ["jblock"]
+            if collapse and level > 0:
+                cls.append("collapsed")
+            items = []
+            for i, v in enumerate(value):
+                # jsonpath-ng uses brackets for lists, and a dot separator if not at root
+                new_path = f"{path}.[{i}]" if path else f"[{i}]"
+                items.append(
+                    '<div class="jitem">'
+                    f"{self._value_to_html(v, collapse, level + 1, new_path)}"
+                    "</div>"
+                )
+            children = "".join(items)
+            return (
+                f'<div class="{ " ".join(cls) }" data-jpath="{path}">'
+                '<span class="jtoggler"></span>['
+                f'<div class="children">{children}</div>]</div>'
+            )
+
+        # For primitive values, wrap them in a span with the path
+        if isinstance(value, str):
+            return f'<span class="jstr" data-jpath="{path}">"{escape(value)}"</span>'
+        if value is True or value is False:
+            val_str = str(value).lower()
+            return f'<span class="jbool" data-jpath="{path}">{val_str}</span>'
+        if value is None:
+            return f'<span class="jnull" data-jpath="{path}">null</span>'
+        return f'<span class="jnum" data-jpath="{path}">{value}</span>'
+
+    def apply_path_filter(self, expression: str) -> None:
+        """
+        Asynchronously prune self._json_data by JSONPath and re-render.
+        A callback is fired with (expression, match_count) when done.
+        """
+        def _task():
+            if not expression.strip():
+                return self._json_data, [], expression.strip()
+
+            try:
+                expr = parse(expression)
+                matches = expr.find(self._json_data)
+                pruned = self._build_pruned_tree(matches)
+                highlight_paths = [str(m.full_path) for m in matches]
+                return pruned, highlight_paths, expression
+            except JsonPathParserError as e:
+                raise e
+            except Exception as e:
+                raise JsonPathParserError(f"Filter error: {e}") from e
+
+        def _done(fut):
+            try:
+                pruned, highlights, expr = fut.result()
+            except JsonPathParserError as e:
+                GLib.idle_add(self._show_error_dialog, str(e))
+                pruned, highlights, expr = self._json_data, [], ""
+
+            GLib.idle_add(
+                self._render,
+                pruned,
+                highlights,
+                expr,
+                len(highlights),
+            )
+        _EXECUTOR.submit(_task).add_done_callback(_done)
+
+    def _show_error_dialog(self, message: str) -> bool:
+        dialog = MessageDialog(
+            transient_for=self._win,
+            modal=True,
+            message_type=MessageType.ERROR,
+            buttons=Gtk.ButtonsType.OK,
+            text="Invalid JSONPath Expression",
+        )
+        dialog.format_secondary_text(message)
+        dialog.run()
+        dialog.destroy()
+        return False
+
+    def _render(
+        self,
+        data,
+        highlights: list[str],
+        expr: str,
+        count: int,
+    ) -> bool:
+        """Generates and loads HTML, then runs JS to highlight matches."""
+        html = self._generate_html(data)
+
+        if not self.webview:
+            return False
+
+        if hasattr(self.webview, "highlight_handler_id"):
+            self.webview.disconnect(self.webview.highlight_handler_id)
+
+        def on_load_finished(webview, load_event):
+            if load_event == LoadEvent.FINISHED:
+                js = (
+                    f"const paths = {highlights!r};\n"
+                    "paths.forEach(p => {\n"
+                    '  const el = document.querySelector(`[data-jpath="${p}"]`);\n'
+                    "  if (el) el.classList.add('jhighlight');\n"
+                    "});"
+                )
+                webview.run_javascript(js)
+                if hasattr(webview, "highlight_handler_id"):
+                    webview.disconnect(webview.highlight_handler_id)
+                    del webview.highlight_handler_id
+
+        handler_id = self.webview.connect("load-changed", on_load_finished)
+        self.webview.highlight_handler_id = handler_id
+        self.webview.load_html(html, "file:///")
+
+        if self.filter_callback:
+            self.filter_callback(expr, count)
+
+        return False
+
+    def _build_pruned_tree(self, matches: list) -> Any:
+        """Return new dict/list containing matches and their ancestors."""
+        if not matches:
+            return {}
+
+        keeper_paths = set()
+        for m in matches:
+            # m.path is an iterable of path elements (Index, Fields)
+            path_tuple = tuple(
+                p.index if isinstance(p, jpath.Index) else str(p)
+                for p in m.path
+            )
+            for i in range(len(path_tuple) + 1):
+                keeper_paths.add(path_tuple[:i])
+
+        if not keeper_paths or tuple() in keeper_paths:
+            return self._json_data
+
+        def recurse(data, path):
+            if not isinstance(data, (dict, list)):
+                return data
+
+            if isinstance(data, dict):
+                return {
+                    key: recurse(value, path + (str(key),))
+                    for key, value in data.items()
+                    if path + (str(key),) in keeper_paths
+                }
+
+            # Must be a list
+            return [
+                recurse(value, path + (i,))
+                for i, value in enumerate(data)
+                if path + (i,) in keeper_paths
+            ]
+
+        return recurse(self._json_data, tuple())
 
 
 class HtmlPreview:
@@ -253,6 +507,8 @@ class Renderer(Overlay):
         self.style = style
         self.tab_width = 8
         self.__win = win
+        self.parser_instance = None
+
 
     def on_theme_changed(self, obj=None, pspec=None):
         """Change webkit background and default foreground color."""
@@ -261,9 +517,9 @@ class Renderer(Overlay):
         foreground = text_style.get_color(StateFlags.NORMAL)
         self.webview.set_background_color(background)
         self.fgcolor = (
-            f"#{int(foreground.red*255):x}"
-            f"{int(foreground.green*255):x}"
-            f"{int(foreground.blue*255):x}"
+            f"#{int(foreground.red*255):02x}"
+            f"{int(foreground.green*255):02x}"
+            f"{int(foreground.blue*255):02x}"
         )
         self.on_load_changed(self.webview, LoadEvent.FINISHED)
 
@@ -278,7 +534,6 @@ class Renderer(Overlay):
             None,
         )
         while self.__position < 0:
-            # this call at this place do problem, when Gdk.threads_init
             main_iteration()
         return self.__position
 
@@ -310,7 +565,7 @@ class Renderer(Overlay):
     def on_context_menu(self, webview, menu, event, hit_test_result):
         """No action on webkit context menu."""
         self.context_button = event.button.button
-        return True  # disable context menu for now
+        return True
 
     def on_button_release(self, webview, event):
         """Open links and let other clicks propagate."""
@@ -320,7 +575,6 @@ class Renderer(Overlay):
             else:
                 show_uri_on_window(None, self.link_uri, 0)
             return True
-
         return False
 
     def find_and_opendocument(self, file_path):
@@ -359,6 +613,9 @@ class Renderer(Overlay):
         self.__parser = PARSERS[parser]
         klass = self.__parser["class"]
         self.parser_instance = klass() if klass is not None else None
+        if isinstance(self.parser_instance, JsonPreview):
+            self.parser_instance.webview = self.webview
+            self.parser_instance._win = self.__win
         idle_add(self.do_render)
 
     def get_parser(self):
@@ -390,9 +647,9 @@ class Renderer(Overlay):
                 html = NOT_FOUND.format(**self.__writer)
             elif issubclass(self.__parser["class"], JsonPreview):
                 try:
-                    parser = self.parser_instance or self.__parser["class"]()
+                    parser = self.parser_instance
                     html = parser.to_html(self.src, self.tab_width)
-                except ValueError as e:
+                except (ValueError, TypeError) as e:
                     return False, DATA_ERROR % ("JSON", str(e)), "text/html"
                 return True, html, "text/html"
             elif not issubclass(self.__parser["class"], HtmlPreview):
@@ -414,7 +671,7 @@ class Renderer(Overlay):
                 }
                 if self.__writer["key"] == "pep":
                     kwargs["reader_name"] = "pep"
-                    kwargs.pop("parser")  # pep is allways rst
+                    kwargs.pop("parser")
                 html = publish_string(**kwargs).decode("utf-8")
                 return True, html, "text/html"
             else:
@@ -422,32 +679,27 @@ class Renderer(Overlay):
 
         except DataError as e:
             return False, DATA_ERROR % ("Data", e), "text/html"
-
         except NotImplementedError:
             exc_str = format_exc()
             return False, NOT_IMPLEMENTED_ERROR % exc_str, "text/html"
-
         except BaseException:
             exc_str = format_exc()
             return False, EXCEPTION_ERROR % exc_str, "text/html"
-
         else:
-            # output to file or html preview
             return False, html, "text/html"
 
     def do_render(self):
         """Render the source, and show rendered output."""
         state, html, mime_type = self.render_output()
         if state:
-            if self.pos > 1:  # vim
+            if self.pos > 1:
                 a, b = len(self.src[:self.pos]), len(self.src[self.pos:])
                 position = (float(a) / (a + b)) if a or b else 0
             else:
                 position = self.pos
-
             html += SCROLL % position
-        if html and self.__win.runing:
-            file_name = self.file_name or get_home_dir()
+        if html and getattr(self.__win, "runing", False):
+            file_name = getattr(self, "file_name", get_home_dir())
             self.webview.load_bytes(
                 Bytes(html.encode("utf-8")),
                 mime_type,
@@ -470,7 +722,6 @@ class Renderer(Overlay):
 
     def on_print_failed(self, po, error):
         """Log error when print failed."""
-        # FIXME: if dialog is used, application will lock :-(
         log_default_handler(
             "Application",
             LogLevelFlags.LEVEL_WARNING,
@@ -480,10 +731,7 @@ class Renderer(Overlay):
     def on_load_changed(self, webview, load_event):
         """Set foreground color when object while object is loading."""
         self.webview.run_javascript(
-            f"document.fgColor='{self.fgcolor}'",
-            None,
-            None,
-            None,
+            f"document.body.style.color='{self.fgcolor}'", None, None, None
         )
 
     def do_next_match(self, text):
@@ -496,7 +744,6 @@ class Renderer(Overlay):
                 main_iteration()
         elif self.search_done:
             controller.search_next()
-
         return self.search_done
 
     def do_previous_match(self, text):
@@ -513,7 +760,6 @@ class Renderer(Overlay):
                 main_iteration()
         elif self.search_done:
             controller.search_previous()
-
         return self.search_done
 
     def stop_search(self):
@@ -534,10 +780,9 @@ class Renderer(Overlay):
         if position is not None:
             self.pos = position
 
-        if self.pos > 1:  # vim
+        if self.pos > 1:
             a, b = len(self.src[:self.pos]), len(self.src[self.pos:])
             position = (float(a) / (a + b)) if a or b else 0
         else:
             position = self.pos
-
         self.webview.run_javascript(JS_SCROLL % position, None, None, None)
