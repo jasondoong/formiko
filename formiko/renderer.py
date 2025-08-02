@@ -193,19 +193,20 @@ class JsonPreview:
 
     def apply_path_filter(self, expression: str) -> None:
         """
-        Asynchronously prune self._json_data by JSONPath and re-render.
-        A callback is fired with (expression, match_count) when done.
+        Evaluate a JSONPath expression and update the view.
+        Matching elements and their ancestors are expanded and highlighted,
+        while other blocks are collapsed.
         """
+
         def _task():
             if not expression.strip():
-                return self._json_data, [], expression.strip()
+                return self._json_data, [], [], expression.strip()
 
             try:
                 expr = parse(expression)
                 matches = expr.find(self._json_data)
-                pruned = self._build_pruned_tree(matches)
-                highlight_paths = [str(m.full_path) for m in matches]
-                return pruned, highlight_paths, expression
+                highlights, expand = self._build_paths(matches)
+                return self._json_data, highlights, expand, expression
             except JsonPathParserError as e:
                 raise e
             except Exception as e:
@@ -213,18 +214,20 @@ class JsonPreview:
 
         def _done(fut):
             try:
-                pruned, highlights, expr = fut.result()
+                data, highlights, expand, expr = fut.result()
             except JsonPathParserError as e:
                 GLib.idle_add(self._show_error_dialog, str(e))
-                pruned, highlights, expr = self._json_data, [], ""
+                data, highlights, expand, expr = self._json_data, [], [], ""
 
             GLib.idle_add(
                 self._render,
-                pruned,
+                data,
                 highlights,
+                expand,
                 expr,
                 len(highlights),
             )
+
         _EXECUTOR.submit(_task).add_done_callback(_done)
 
     def _show_error_dialog(self, message: str) -> bool:
@@ -244,10 +247,11 @@ class JsonPreview:
         self,
         data,
         highlights: list[str],
+        expand: list[str],
         expr: str,
         count: int,
     ) -> bool:
-        """Generates and loads HTML, then runs JS to highlight matches."""
+        """Generates and loads HTML, then runs JS to update view."""
         html = self._generate_html(data)
 
         if not self.webview:
@@ -258,15 +262,23 @@ class JsonPreview:
 
         def on_load_finished(webview, load_event):
             if load_event == LoadEvent.FINISHED:
-                js = (
-                    f"const paths = {highlights!r};\n"
-                    "paths.forEach(p => {\n"
-                    '  const el = document.querySelector(`[data-jpath="${p}"]`);\n'
-                    "  if (el) el.classList.add('jhighlight');\n"
-                    "});"
+                js_parts: list[str] = []
+                if expr:
+                    js_parts.append(
+                        "document.querySelectorAll('.jblock').forEach(el => {""if (el.dataset.jpath !== '') el.classList.add('collapsed');""});"
+                    )
+                    js_parts.append(
+                        f"const expand = {expand!r}; "
+                        "expand.forEach(p => { const el = document.querySelector('[data-jpath=\"' + p + '\"]'); "
+                        "if (el) el.classList.remove('collapsed'); });"
+                    )
+                js_parts.append(
+                    f"const paths = {highlights!r}; "
+                    "paths.forEach(p => { const el = document.querySelector('[data-jpath=\"' + p + '\"]'); "
+                    "if (el) el.classList.add('jhighlight'); });"
                 )
-                webview.run_javascript(js)
-                if hasattr(webview, "highlight_handler_id"):
+                webview.run_javascript('\n'.join(js_parts))
+                if hasattr(webview, 'highlight_handler_id'):
                     webview.disconnect(webview.highlight_handler_id)
                     del webview.highlight_handler_id
 
@@ -279,43 +291,36 @@ class JsonPreview:
 
         return False
 
-    def _build_pruned_tree(self, matches: list) -> Any:
-        """Return new dict/list containing matches and their ancestors."""
+    def _build_paths(self, matches: list) -> tuple[list[str], list[str]]:
+        """Return paths to highlight and expand from matches."""
         if not matches:
-            return {}
+            return [], []
 
-        keeper_paths = set()
+        path_tuples = []
         for m in matches:
-            # m.path is an iterable of path elements (Index, Fields)
             path_tuple = tuple(
                 p.index if isinstance(p, Index) else str(p)
                 for p in m.path
             )
-            for i in range(len(path_tuple) + 1):
-                keeper_paths.add(path_tuple[:i])
+            path_tuples.append(path_tuple)
 
-        if not keeper_paths or tuple() in keeper_paths:
-            return self._json_data
+        def tuple_to_str(t: tuple) -> str:
+            path = ""
+            for part in t:
+                if isinstance(part, int):
+                    path = f"{path}.[{part}]" if path else f"[{part}]"
+                else:
+                    path = f"{path}.{part}" if path else str(part)
+            return path
 
-        def recurse(data, path):
-            if not isinstance(data, (dict, list)):
-                return data
+        highlights = [tuple_to_str(t) for t in path_tuples]
+        expand_set = set()
+        for t in path_tuples:
+            for i in range(len(t) + 1):
+                expand_set.add(t[:i])
+        expand = [tuple_to_str(t) for t in expand_set]
 
-            if isinstance(data, dict):
-                return {
-                    key: recurse(value, path + (str(key),))
-                    for key, value in data.items()
-                    if path + (str(key),) in keeper_paths
-                }
-
-            # Must be a list
-            return [
-                recurse(value, path + (i,))
-                for i, value in enumerate(data)
-                if path + (i,) in keeper_paths
-            ]
-
-        return recurse(self._json_data, tuple())
+        return highlights, expand
 
 
 class HtmlPreview:

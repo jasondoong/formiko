@@ -5,65 +5,59 @@ from formiko.renderer import JsonPreview
 
 
 def filter_json_for_test(data, expression):
-    """
-    A test helper function to simulate the filtering process
-    and return the pruned data and highlight paths.
-    """
     preview = JsonPreview()
     preview._json_data = data
-
     if not expression.strip():
-        return data, []
-
+        return data, [], []
     expr = parse(expression)
     matches = expr.find(data)
-
-    if not matches:
-        return {}, []
-
-    pruned_data = preview._build_pruned_tree(matches)
-    highlight_paths = [str(m.full_path) for m in matches]
-
-    return pruned_data, highlight_paths
+    highlights, expand = preview._build_paths(matches)
+    return data, highlights, expand
 
 
 def test_basic_filter():
     data = {"a": {"b": 1}, "c": 2}
-    pruned, hl = filter_json_for_test(data, "$.a.b")
-    assert pruned == {"a": {"b": 1}}
+    returned, hl, expand = filter_json_for_test(data, "$.a.b")
+    assert returned == data
     assert hl == ["a.b"]
+    assert set(expand) == {"", "a", "a.b"}
 
 
 def test_no_filter():
     data = {"a": {"b": 1}, "c": 2}
-    pruned, hl = filter_json_for_test(data, "")
-    assert pruned == data
+    returned, hl, expand = filter_json_for_test(data, "")
+    assert returned == data
     assert hl == []
+    assert expand == []
 
 
 def test_no_matches():
     data = {"a": {"b": 1}, "c": 2}
-    pruned, hl = filter_json_for_test(data, "$.d")
-    assert pruned == {}
+    returned, hl, expand = filter_json_for_test(data, "$.d")
+    assert returned == data
     assert hl == []
+    assert expand == []
 
 
 def test_wildcard_filter():
     data = {"a": {"b": 1, "c": 2}}
-    pruned, hl = filter_json_for_test(data, "$.a.*")
-    assert pruned == {"a": {"b": 1, "c": 2}}
+    returned, hl, expand = filter_json_for_test(data, "$.a.*")
+    assert returned == data
     assert sorted(hl) == ["a.b", "a.c"]
+    assert set(expand) == {"", "a", "a.b", "a.c"}
 
 
 def test_array_filter():
     data = {"a": [10, 20, 30]}
-    pruned, hl = filter_json_for_test(data, "$.a[1]")
-    assert pruned == {"a": [20]}
+    returned, hl, expand = filter_json_for_test(data, "$.a[1]")
+    assert returned == data
     assert hl == ["a.[1]"]
+    assert set(expand) == {"", "a", "a.[1]"}
 
 
 def test_root_is_match():
     data = {"a": 1}
-    pruned, hl = filter_json_for_test(data, "$")
-    assert pruned == data
-    assert hl == ["$"]
+    returned, hl, expand = filter_json_for_test(data, "$")
+    assert returned == data
+    assert hl == [""]
+    assert set(expand) == {""}
