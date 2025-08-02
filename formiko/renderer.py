@@ -502,12 +502,15 @@ class Renderer(Overlay):
         self.link_uri = None
         self.context_button = 3  # will be rewrite by real value
 
-        self.set_writer(writer)
-        self.set_parser(parser)
-        self.style = style
-        self.tab_width = 8
+        # Window reference must be available before parser initialization
         self.__win = win
         self.parser_instance = None
+
+        self.set_writer(writer)
+        self.set_parser(parser)
+
+        self.style = style
+        self.tab_width = 8
 
 
     def on_theme_changed(self, obj=None, pspec=None):
