@@ -285,12 +285,19 @@ class JsonPreview:
             return {}
 
         keeper_paths = set()
-        for m in matches:
-            # m.path is an iterable of path elements (Index, Fields)
-            path_tuple = tuple(
+        def get_path_tuple(m):
+            path = []
+            current = m
+            while current and current.path is not None:
+                path.insert(0, current.path)
+                current = current.context
+            return tuple(
                 p.index if isinstance(p, Index) else str(p)
-                for p in m.path
+                for p in path
             )
+
+        for m in matches:
+            path_tuple = get_path_tuple(m)
             for i in range(len(path_tuple) + 1):
                 keeper_paths.add(path_tuple[:i])
 
