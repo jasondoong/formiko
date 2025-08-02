@@ -205,9 +205,22 @@ class JsonPreview:
 
         A callback is fired with (expression, match_count) when done.
         """
-        def _task():
+        def _task():  # noqa: C901
+            def collect_paths(val, path=""):
+                paths = {path}
+                if isinstance(val, dict):
+                    for k, v in val.items():
+                        new_path = f"{path}.{k}" if path else k
+                        paths |= collect_paths(v, new_path)
+                elif isinstance(val, list):
+                    for i, v in enumerate(val):
+                        new_path = f"{path}.[{i}]" if path else f"[{i}]"
+                        paths |= collect_paths(v, new_path)
+                return paths
+
             if not expression.strip():
-                return self._json_data, [], {""}, expression.strip()
+                expands = collect_paths(self._json_data)
+                return self._json_data, [], expands, ""
 
             try:
                 expr = parse(expression)
@@ -298,6 +311,12 @@ highlights.forEach(p => {
   if (el) el.classList.add('jhighlight');
 });
 """
+                    )
+                    webview.run_javascript(js)
+                else:
+                    js = (
+                        "document.querySelectorAll('.jblock').forEach("
+                        "el => el.classList.remove('collapsed'));"
                     )
                     webview.run_javascript(js)
                 if hasattr(webview, "highlight_handler_id"):

@@ -11,7 +11,19 @@ def filter_json_for_test(data, expression):
     preview._json_data = data  # noqa: SLF001
 
     if not expression.strip():
-        return data, [], {""}
+        def collect_paths(val, path=""):
+            paths = {path}
+            if isinstance(val, dict):
+                for k, v in val.items():
+                    new_path = f"{path}.{k}" if path else k
+                    paths |= collect_paths(v, new_path)
+            elif isinstance(val, list):
+                for i, v in enumerate(val):
+                    new_path = f"{path}.[{i}]" if path else f"[{i}]"
+                    paths |= collect_paths(v, new_path)
+            return paths
+
+        return data, [], collect_paths(data)
 
     expr = parse(expression)
     matches = expr.find(data)
@@ -45,7 +57,7 @@ def test_no_filter():
     pruned, hl, exp = filter_json_for_test(data, "")
     assert pruned == data
     assert hl == []
-    assert exp == {""}
+    assert exp == {"", "a", "a.b", "c"}
 
 
 def test_no_matches():
