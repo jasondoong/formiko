@@ -2,6 +2,7 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from html import escape
+from importlib.resources import files
 from io import StringIO
 from json import dumps, loads
 from os.path import exists, splitext
@@ -42,10 +43,8 @@ from gi.repository.WebKit2 import (
     PrintOperation,
     WebView,
 )
-from importlib.resources import files
 from jsonpath_ng.exceptions import JsonPathParserError
 from jsonpath_ng.ext import parse
-from jsonpath_ng.jsonpath import Index
 
 from formiko.dialogs import FileNotFoundDialog
 from formiko.sourceview import LANGS
@@ -78,9 +77,9 @@ _EXECUTOR = ThreadPoolExecutor(max_workers=2)
 
 
 class JsonPreview:
-    """
-    Manages parsing, filtering, and rendering of JSON data into a
-    collapsible and highlighted HTML preview.
+    """Manage JSON parsing, filtering, and rendering.
+
+    Provides a collapsible and highlighted HTML preview.
     """
 
     def __init__(self, collapse_lines: int = 50) -> None:
@@ -94,8 +93,8 @@ class JsonPreview:
         self.filter_callback = None
 
     def to_html(self, text: str, tab_width: int = 2) -> str:
-        """
-        Parses JSON text and returns the initial full HTML representation.
+        """Parse JSON text and return the initial full HTML representation.
+
         The parsed data is stored for later filtering.
         """
         self._json_data = loads(text)
@@ -103,7 +102,7 @@ class JsonPreview:
         return self._generate_html(self._json_data)
 
     def _generate_html(self, data: Any) -> str:
-        """Generates the full HTML document for the given JSON data."""
+        """Generate the full HTML document for the given JSON data."""
         pretty = dumps(
             data,
             indent=self._tab_width,
@@ -147,13 +146,16 @@ class JsonPreview:
             for _key, val in value.items():
                 # jsonpath-ng uses dot for fields
                 new_path = f"{path}.{_key}" if path else _key
+                child_html = self._value_to_html(
+                    val, collapse, level + 1, new_path,
+                )
                 items.append(
                     '<div class="jitem">'
                     '<span class="jkey">'
                     f'"{escape(str(_key))}"'
                     "</span>: "
-                    f"{self._value_to_html(val, collapse, level + 1, new_path)}"
-                    "</div>"
+                    f"{child_html}"
+                    "</div>",
                 )
             children = "".join(items)
             return (
@@ -167,12 +169,16 @@ class JsonPreview:
                 cls.append("collapsed")
             items = []
             for i, v in enumerate(value):
-                # jsonpath-ng uses brackets for lists, and a dot separator if not at root
+                # jsonpath-ng uses brackets for lists,
+                # and a dot separator if not at root
                 new_path = f"{path}.[{i}]" if path else f"[{i}]"
+                child_html = self._value_to_html(
+                    v, collapse, level + 1, new_path,
+                )
                 items.append(
                     '<div class="jitem">'
-                    f"{self._value_to_html(v, collapse, level + 1, new_path)}"
-                    "</div>"
+                    f"{child_html}"
+                    "</div>",
                 )
             children = "".join(items)
             return (
@@ -183,7 +189,10 @@ class JsonPreview:
 
         # For primitive values, wrap them in a span with the path
         if isinstance(value, str):
-            return f'<span class="jstr" data-jpath="{path}">"{escape(value)}"</span>'
+            esc = escape(value)
+            return (
+                f'<span class="jstr" data-jpath="{path}">"{esc}"</span>'
+            )
         if value is True or value is False:
             val_str = str(value).lower()
             return f'<span class="jbool" data-jpath="{path}">{val_str}</span>'
@@ -191,37 +200,50 @@ class JsonPreview:
             return f'<span class="jnull" data-jpath="{path}">null</span>'
         return f'<span class="jnum" data-jpath="{path}">{value}</span>'
 
-    def apply_path_filter(self, expression: str) -> None:
-        """
-        Asynchronously prune self._json_data by JSONPath and re-render.
+    def apply_path_filter(self, expression: str) -> None:  # noqa: C901
+        """Filter JSON by JSONPath and update the preview.
+
         A callback is fired with (expression, match_count) when done.
         """
         def _task():
             if not expression.strip():
-                return self._json_data, [], expression.strip()
+                return self._json_data, [], {""}, expression.strip()
 
             try:
                 expr = parse(expression)
                 matches = expr.find(self._json_data)
-                pruned = self._build_pruned_tree(matches)
-                highlight_paths = [str(m.full_path) for m in matches]
-                return pruned, highlight_paths, expression
-            except JsonPathParserError as e:
-                raise e
+            except JsonPathParserError:
+                raise
             except Exception as e:
-                raise JsonPathParserError(f"Filter error: {e}") from e
+                msg = "Filter error"
+                raise JsonPathParserError(msg) from e
+            else:
+                highlights = []
+                expands = {""}
+                for m in matches:
+                    current = m
+                    while current:
+                        path_str = str(current.full_path)
+                        if path_str == "$":
+                            path_str = ""
+                        expands.add(path_str)
+                        current = current.context
+                    path_str = str(m.full_path)
+                    highlights.append("" if path_str == "$" else path_str)
+                return self._json_data, highlights, expands, expression
 
         def _done(fut):
             try:
-                pruned, highlights, expr = fut.result()
+                data, highlights, expands, expr = fut.result()
             except JsonPathParserError as e:
                 GLib.idle_add(self._show_error_dialog, str(e))
-                pruned, highlights, expr = self._json_data, [], ""
+                data, highlights, expands, expr = self._json_data, [], {""}, ""
 
             GLib.idle_add(
                 self._render,
-                pruned,
+                data,
                 highlights,
+                expands,
                 expr,
                 len(highlights),
             )
@@ -244,10 +266,11 @@ class JsonPreview:
         self,
         data,
         highlights: list[str],
+        expands: set[str],
         expr: str,
         count: int,
     ) -> bool:
-        """Generates and loads HTML, then runs JS to highlight matches."""
+        """Generate and load HTML, then run JS to fold and highlight."""
         html = self._generate_html(data)
 
         if not self.webview:
@@ -258,14 +281,25 @@ class JsonPreview:
 
         def on_load_finished(webview, load_event):
             if load_event == LoadEvent.FINISHED:
-                js = (
-                    f"const paths = {highlights!r};\n"
-                    "paths.forEach(p => {\n"
-                    '  const el = document.querySelector(`[data-jpath="${p}"]`);\n'
-                    "  if (el) el.classList.add('jhighlight');\n"
-                    "});"
-                )
-                webview.run_javascript(js)
+                if expr:
+                    js = (
+                        f"const highlights = {highlights!r};\n"
+                        f"const expands = {list(expands)!r};\n"
+                        """
+document.querySelectorAll('.jblock').forEach(
+  el => el.classList.add('collapsed')
+);
+expands.forEach(p => {
+  const el = document.querySelector(`[data-jpath="${p}"]`);
+  if (el) el.classList.remove('collapsed');
+});
+highlights.forEach(p => {
+  const el = document.querySelector(`[data-jpath="${p}"]`);
+  if (el) el.classList.add('jhighlight');
+});
+"""
+                    )
+                    webview.run_javascript(js)
                 if hasattr(webview, "highlight_handler_id"):
                     webview.disconnect(webview.highlight_handler_id)
                     del webview.highlight_handler_id
@@ -278,51 +312,6 @@ class JsonPreview:
             self.filter_callback(expr, count)
 
         return False
-
-    def _build_pruned_tree(self, matches: list) -> Any:
-        """Return new dict/list containing matches and their ancestors."""
-        if not matches:
-            return {}
-
-        keeper_paths = set()
-        def get_path_tuple(m):
-            path = []
-            current = m
-            while current and current.path is not None:
-                path.insert(0, current.path)
-                current = current.context
-            return tuple(
-                p.index if isinstance(p, Index) else str(p)
-                for p in path
-            )
-
-        for m in matches:
-            path_tuple = get_path_tuple(m)
-            for i in range(len(path_tuple) + 1):
-                keeper_paths.add(path_tuple[:i])
-
-        if not keeper_paths or tuple() in keeper_paths:
-            return self._json_data
-
-        def recurse(data, path):
-            if not isinstance(data, (dict, list)):
-                return data
-
-            if isinstance(data, dict):
-                return {
-                    key: recurse(value, path + (str(key),))
-                    for key, value in data.items()
-                    if path + (str(key),) in keeper_paths
-                }
-
-            # Must be a list
-            return [
-                recurse(value, path + (i,))
-                for i, value in enumerate(data)
-                if path + (i,) in keeper_paths
-            ]
-
-        return recurse(self._json_data, tuple())
 
 
 class HtmlPreview:
@@ -625,7 +614,7 @@ class Renderer(Overlay):
         self.parser_instance = klass() if klass is not None else None
         if isinstance(self.parser_instance, JsonPreview):
             self.parser_instance.webview = self.webview
-            self.parser_instance._win = self.__win
+            self.parser_instance._win = self.__win  # noqa: SLF001
         idle_add(self.do_render)
 
     def get_parser(self):
@@ -741,7 +730,7 @@ class Renderer(Overlay):
     def on_load_changed(self, webview, load_event):
         """Set foreground color when object while object is loading."""
         self.webview.run_javascript(
-            f"document.body.style.color='{self.fgcolor}'", None, None, None
+            f"document.body.style.color='{self.fgcolor}'", None, None, None,
         )
 
     def do_next_match(self, text):
