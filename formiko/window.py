@@ -545,6 +545,7 @@ class AppWindow(Gtk.ApplicationWindow):
             )
 
         self.path_entry = Gtk.SearchEntry(placeholder_text="JSONPath filter…")
+        self.path_entry.set_width_chars(50)
         self.path_entry.connect("activate", self._on_filter_activate)
         filter_btn = Gtk.Button.new_from_icon_name(
             "system-search-symbolic", Gtk.IconSize.BUTTON
