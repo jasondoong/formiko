@@ -43,9 +43,9 @@ from gi.repository.WebKit2 import (
     WebView,
 )
 from importlib.resources import files
-from jsonpath_ng import path as jpath
 from jsonpath_ng.exceptions import JsonPathParserError
 from jsonpath_ng.ext import parse
+from jsonpath_ng.jsonpath import Index
 
 from formiko.dialogs import FileNotFoundDialog
 from formiko.sourceview import LANGS
@@ -288,7 +288,7 @@ class JsonPreview:
         for m in matches:
             # m.path is an iterable of path elements (Index, Fields)
             path_tuple = tuple(
-                p.index if isinstance(p, jpath.Index) else str(p)
+                p.index if isinstance(p, Index) else str(p)
                 for p in m.path
             )
             for i in range(len(path_tuple) + 1):
