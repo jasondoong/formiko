@@ -10,7 +10,7 @@ def filter_json_for_test(data, expression):
     preview = JsonPreview()
     preview._json_data = data  # noqa: SLF001
 
-    if not expression.strip():
+    if not expression or not expression.strip():
         def collect_paths(val, path=""):
             paths = {path}
             if isinstance(val, dict):
@@ -55,6 +55,15 @@ def test_no_filter():
     """Handle empty expression without folding."""
     data = {"a": {"b": 1}, "c": 2}
     pruned, hl, exp = filter_json_for_test(data, "")
+    assert pruned == data
+    assert hl == []
+    assert exp == {"", "a", "a.b", "c"}
+
+
+def test_filter_cleared():
+    """Treat ``None`` expression as clearing the filter."""
+    data = {"a": {"b": 1}, "c": 2}
+    pruned, hl, exp = filter_json_for_test(data, None)
     assert pruned == data
     assert hl == []
     assert exp == {"", "a", "a.b", "c"}

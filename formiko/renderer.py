@@ -200,10 +200,13 @@ class JsonPreview:
             return f'<span class="jnull" data-jpath="{path}">null</span>'
         return f'<span class="jnum" data-jpath="{path}">{value}</span>'
 
-    def apply_path_filter(self, expression: str) -> None:  # noqa: C901
+    def apply_path_filter(self, expression: str | None) -> None:  # noqa: C901
         """Filter JSON by JSONPath and update the preview.
 
-        A callback is fired with (expression, match_count) when done.
+        A callback is fired with ``(expression, match_count)`` when done.
+
+        ``expression`` may be ``None`` or empty to clear any existing filter
+        and fully expand the JSON tree.
         """
         def _task():  # noqa: C901
             def collect_paths(val, path=""):
@@ -218,7 +221,7 @@ class JsonPreview:
                         paths |= collect_paths(v, new_path)
                 return paths
 
-            if not expression.strip():
+            if not expression or not expression.strip():
                 expands = collect_paths(self._json_data)
                 return self._json_data, [], expands, ""
 
