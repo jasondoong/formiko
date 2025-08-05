@@ -7,8 +7,8 @@ Version dev
   * remove deprecated webkit2 4.0
   * Neovim support (formiko-vim)
     - new vte 2.91 dependency
-  * JSON preview: add collapsible folding view (closes #XX)
-  * JSON preview: unfold all nodes when JSONPath filter is cleared
+  * json preview: add collapsible folding view
+  * json preview: add json path filter
 
 
 Version 1.5.0
