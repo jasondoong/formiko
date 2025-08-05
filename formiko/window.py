@@ -325,6 +325,9 @@ class AppWindow(Gtk.ApplicationWindow):
         """'file-type' event handler."""
         parser = EXTS.get(ext, self.preferences.parser)
         self.pref_menu.set_parser(parser)
+        is_json = parser == "json"
+        for widget in self.json_filter_widgets:
+            widget.set_visible(is_json)
 
     def on_scroll_changed(self, widget, position):
         """'scroll-changed' event handler."""
@@ -339,6 +342,24 @@ class AppWindow(Gtk.ApplicationWindow):
             self.renderer.set_writer(writer)
             self.preferences.writer = writer
             self.preferences.save()
+
+    def _on_filter_activate(self, _):
+        """Handle activation of the JSONPath filter."""
+        expr = self.path_entry.get_text()
+        if self.renderer.get_parser() == "json":
+            json_preview = self.renderer.parser_instance
+            if json_preview:
+                json_preview.filter_callback = self._on_filter_applied
+                json_preview.apply_path_filter(expr)
+
+    def _on_filter_applied(self, expr, count):
+        """Update statusbar after a filter is applied."""
+        if hasattr(self, "status_bar"):
+            if expr:
+                msg = f'Filter: "{expr}" → {count} match(es)'
+            else:
+                msg = "Filter cleared."
+            self.status_bar.push(0, msg)
 
     def on_custom_style_toggle(self, action, param):
         """'custom-style-toggle' action handler."""
@@ -515,6 +536,24 @@ class AppWindow(Gtk.ApplicationWindow):
                 ),
             )
 
+        self.path_entry = Gtk.SearchEntry(placeholder_text="JSONPath filter…")
+        self.path_entry.set_width_chars(50)
+        self.path_entry.connect("activate", self._on_filter_activate)
+        filter_btn = Gtk.Button.new_from_icon_name(
+            "system-search-symbolic", Gtk.IconSize.BUTTON
+        )
+        filter_btn.set_tooltip_text("Apply Filter")
+        filter_btn.connect("clicked", self._on_filter_activate)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        Gtk.StyleContext.add_class(box.get_style_context(), "linked")
+        box.pack_start(self.path_entry, True, True, 0)
+        box.pack_start(filter_btn, False, False, 0)
+        headerbar.pack_start(box)
+
+        self.json_filter_widgets = [box]
+        for widget in self.json_filter_widgets:
+            widget.hide()
         self.pref_menu = Preferences(self.preferences)
 
         btn = Gtk.MenuButton(popover=self.pref_menu)
