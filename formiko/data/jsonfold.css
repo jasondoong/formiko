@@ -14,11 +14,12 @@ body{font-family:monospace}
 .jnum{color:#164}
 .jbool{color:#00f}
 .jnull{color:#c00}
+.jhighlight { background-color: #fff59d; }
 @media (prefers-color-scheme: dark){
   .jkey{color:#f88}
   .jstr{color:#9f9}
   .jnum{color:#9cf}
   .jbool{color:#6af}
   .jnull{color:#f99}
+  .jhighlight { background-color: #263238; }
 }
-.jhighlight { background-color: #263238; }
