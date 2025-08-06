@@ -321,6 +321,10 @@ class AppWindow(Gtk.ApplicationWindow):
             self.editor.change_mime_type(parser)
         self.preferences.save()
 
+        is_json = param.get_string() == "json"
+        for widget in self.json_filter_widgets:
+            widget.set_visible(is_json)
+
     def on_file_type(self, widget, ext):
         """'file-type' event handler."""
         parser = EXTS.get(ext, self.preferences.parser)
@@ -333,15 +337,6 @@ class AppWindow(Gtk.ApplicationWindow):
         """'scroll-changed' event handler."""
         if self.preferences.auto_scroll:
             self.renderer.scroll_to_position(position)
-
-    def on_change_writer(self, action, param):
-        """'change-writer' action handler."""
-        if action.get_state() != param:
-            action.set_state(param)
-            writer = param.get_string()
-            self.renderer.set_writer(writer)
-            self.preferences.writer = writer
-            self.preferences.save()
 
     def _on_filter_activate(self, _):
         """Handle activation of the JSONPath filter."""
@@ -360,6 +355,15 @@ class AppWindow(Gtk.ApplicationWindow):
             else:
                 msg = "Filter cleared."
             self.status_bar.push(0, msg)
+
+    def on_change_writer(self, action, param):
+        """'change-writer' action handler."""
+        if action.get_state() != param:
+            action.set_state(param)
+            writer = param.get_string()
+            self.renderer.set_writer(writer)
+            self.preferences.writer = writer
+            self.preferences.save()
 
     def on_custom_style_toggle(self, action, param):
         """'custom-style-toggle' action handler."""
@@ -554,6 +558,7 @@ class AppWindow(Gtk.ApplicationWindow):
         self.json_filter_widgets = [box]
         for widget in self.json_filter_widgets:
             widget.hide()
+
         self.pref_menu = Preferences(self.preferences)
 
         btn = Gtk.MenuButton(popover=self.pref_menu)

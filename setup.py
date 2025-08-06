@@ -6,7 +6,7 @@ from os import listdir, makedirs, path
 from shutil import rmtree
 from typing import ClassVar
 
-from setuptools import Command, find_packages, setup
+from setuptools import Command, setup
 from setuptools.command.build import build
 from setuptools.command.install import install
 
@@ -227,10 +227,6 @@ setup(
         ("share/applications", ["formiko.desktop", "formiko-vim.desktop"]),
         ("share/metainfo", ["formiko.metainfo.xml"]),
         ("share/formiko/icons", ["icons/formiko.svg"]),
-        (
-            "share/formiko",
-            ["formiko/data/jsonfold.css", "formiko/data/jsonfold.js"],
-        ),
         *icons_data(),
     ],
     keywords=["doc", "html", "rst", "docutils", "md", "markdown", "editor"],
