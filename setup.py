@@ -253,6 +253,7 @@ setup(
     install_requires=[
         "docutils>=0.12",
         "PyGObject",
+        "jsonpath-ng",
     ],
     extras_require={
         "dev": [

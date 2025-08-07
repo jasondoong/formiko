@@ -76,7 +76,7 @@ except ImportError:
 _EXECUTOR = ThreadPoolExecutor(max_workers=2)
 
 
-class JsonPreview:
+class JSONPreview:
     """Manage JSON parsing, filtering, and rendering.
 
     Provides a collapsible and highlighted HTML preview.
@@ -368,7 +368,7 @@ PARSERS = {
     "json": {
         "key": "json",
         "title": "JSON preview",
-        "class": JsonPreview,
+        "class": JSONPreview,
     },
 }
 
@@ -591,7 +591,7 @@ class Renderer(Overlay):
     def on_button_release(self, webview, event):
         """Open links and let other clicks propagate."""
         if event.button != self.context_button and self.link_uri:
-            if self.link_uri.startswith("file://"):
+            if self.link_uri.startswith("file://"):  # try to open source
                 self.find_and_opendocument(self.link_uri[7:].split("#")[0])
             else:
                 show_uri_on_window(None, self.link_uri, 0)
@@ -634,7 +634,7 @@ class Renderer(Overlay):
         self.__parser = PARSERS[parser]
         klass = self.__parser["class"]
         self.parser_instance = klass() if klass is not None else None
-        if isinstance(self.parser_instance, JsonPreview):
+        if isinstance(self.parser_instance, JSONPreview):
             self.parser_instance.webview = self.webview
             self.parser_instance._win = self.__win  # noqa: SLF001
         idle_add(self.do_render)
@@ -666,7 +666,7 @@ class Renderer(Overlay):
                 html = NOT_FOUND.format(**self.__parser)
             elif self.__writer["class"] is None:
                 html = NOT_FOUND.format(**self.__writer)
-            elif issubclass(self.__parser["class"], JsonPreview):
+            elif issubclass(self.__parser["class"], JSONPreview):
                 try:
                     parser = self.parser_instance
                     html = parser.to_html(self.src, self.tab_width)
