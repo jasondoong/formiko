@@ -8,7 +8,7 @@ Version dev
   * Neovim support (formiko-vim)
     - new vte 2.91 dependency
   * JSON preview: add collapsible folding view (closes #XX)
-  * json preview: add json path filter
+  * JSON preview: add json path filter
 
 Version 1.5.0
 
