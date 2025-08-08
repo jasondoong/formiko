@@ -201,9 +201,9 @@ class JSONPreview:
     ) -> str:
         # Dictionary: use dot notation for child keys, store data-jpath for JSONPath lookup
         if isinstance(value, dict):
-            cls = ["jblock"]
+            css_classes = ["jblock"]
             if collapse and level > 0:
-                cls.append("collapsed")
+                css_classes.append("collapsed")
             items = []
             for _key, val in value.items():
                 new_path = f"{path}.{_key}" if path else _key
@@ -218,16 +218,16 @@ class JSONPreview:
                 )
             children = "".join(items)
             return (
-                f'<div class="{" ".join(cls)}" data-jpath="{path}">'
+                f'<div class="{" ".join(css_classes)}" data-jpath="{path}">'
                 "<span class='jtoggler'></span>{"
                 f"<div class='children'>{children}</div>}}</div>"
             )
 
         # List: use [i] notation, and dot prefix if not at the root
         if isinstance(value, list):
-            cls = ["jblock"]
+            css_classes = ["jblock"]
             if collapse and level > 0:
-                cls.append("collapsed")
+                css_classes.append("collapsed")
             items = []
             for i, v in enumerate(value):
                 new_path = f"{path}.[{i}]" if path else f"[{i}]"
@@ -235,7 +235,7 @@ class JSONPreview:
                 items.append('<div class="jitem">' f"{child_html}" "</div>")
             children = "".join(items)
             return (
-                f'<div class="{" ".join(cls)}" data-jpath="{path}">'
+                f'<div class="{" ".join(css_classes)}" data-jpath="{path}">'
                 '<span class="jtoggler"></span>['
                 f'<div class="children">{children}</div>]</div>'
             )
