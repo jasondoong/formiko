@@ -101,8 +101,7 @@ class JSONPreview:
                 return paths
 
             if not expression or not expression.strip():
-                expands = collect_paths(self._json_data)
-                return self._json_data, [], expands, ""
+                return self._json_data, [], {""}, ""
 
             try:
                 expr = json_parse(expression)
