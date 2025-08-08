@@ -21,7 +21,7 @@ class JSONPreview:
     Provides a collapsible and highlighted HTML preview.
     """
 
-    def __init__(self, collapse_lines: int = 50) -> None:
+    def __init__(self, collapse_lines: int = 100) -> None:
         self.collapse_lines = collapse_lines
         self._css: str | None = None
         self._js: str | None = None
