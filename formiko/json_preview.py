@@ -41,6 +41,59 @@ document.querySelectorAll('.jblock').forEach(
 _EXECUTOR = ThreadPoolExecutor(max_workers=2)
 
 
+def compute_jsonpath_view(json_data, expression: str | None):
+    """Return (data, highlights, expands, expr) for a given JSONPath expression.
+
+    - highlights: list[str] of matched node paths
+    - expands: set[str] of all paths to expand (ancestors + matched + descendants)
+    - expr: the original expression ('' if none/blank)
+    """
+    if not expression or not expression.strip():
+        return json_data, [], {""}, ""
+
+    try:
+        expr = json_parse(expression)
+        matches = expr.find(json_data)
+    except JsonPathParserError:
+        raise
+    except Exception as e:
+        raise JsonPathParserError("Filter error") from e
+
+    def collect_descendant_paths(val, base_path=""):
+        paths = {base_path}
+        if isinstance(val, dict):
+            for k, v in val.items():
+                child = f"{base_path}.{k}" if base_path else k
+                paths |= collect_descendant_paths(v, child)
+        elif isinstance(val, list):
+            for i, v in enumerate(val):
+                child = f"{base_path}.[{i}]" if base_path else f"[{i}]"
+                paths |= collect_descendant_paths(v, child)
+        return paths
+
+    highlights: list[str] = []
+    expands: set[str] = {""}  # include root so the tree opens from top
+
+    for m in matches:
+        # expand ancestors
+        current = m
+        while current:
+            p = str(current.full_path)
+            if p == "$":
+                p = ""
+            expands.add(p)
+            current = current.context
+
+        # expand matched + descendants
+        p = str(m.full_path)
+        p = "" if p == "$" else p
+        expands |= collect_descendant_paths(m.value, p)
+
+        highlights.append(p)
+
+    return json_data, highlights, expands, expression
+
+
 class JSONPreview:
     """Manage JSON parsing, filtering, and rendering.
 
@@ -81,49 +134,7 @@ class JSONPreview:
         """
 
         def _task():
-            if not expression or not expression.strip():
-                return self._json_data, [], {""}, ""
-
-            try:
-                expr = json_parse(expression)
-                matches = expr.find(self._json_data)
-            except JsonPathParserError:
-                # Preserve the original exception type for UI handling
-                raise
-            except Exception as e:
-                # Wrap other exceptions into JsonPathParserError for unified handling
-                raise JsonPathParserError("Filter error") from e
-                
-            def collect_descendant_paths(val, base_path=""):
-                paths = {base_path}
-                if isinstance(val, dict):
-                    for k, v in val.items():
-                        child = f"{base_path}.{k}" if base_path else k
-                        paths |= collect_descendant_paths(v, child)
-                elif isinstance(val, list):
-                    for i, v in enumerate(val):
-                        child = f"{base_path}.[{i}]" if base_path else f"[{i}]"
-                        paths |= collect_descendant_paths(v, child)
-                return paths
-
-            highlights: list[str] = []
-            expands: set[str] = {""}  # Always expand the root
-            for m in matches:
-                current = m
-                while current:
-                    p = str(current.full_path)
-                    if p == "$":
-                        p = ""
-                    expands.add(p)
-                    current = current.context
-
-                # expand the matched node and all its descendants*
-                p = str(m.full_path)
-                p = "" if p == "$" else p
-                expands |= collect_descendant_paths(m.value, p)
-                highlights.append("" if p == "$" else p)
-
-            return self._json_data, highlights, expands, expression
+            return compute_jsonpath_view(self._json_data, expression)
 
         def _done(fut):
             try:
