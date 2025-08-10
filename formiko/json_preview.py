@@ -15,23 +15,19 @@ from gi.repository.WebKit2 import LoadEvent, WebView
 from jsonpath_ng.exceptions import JsonPathParserError
 from jsonpath_ng.ext import parse as json_parse
 
-# --- Extracted JS constants (no more big inline strings) --------------------
+JS_EXPAND_HIGHLIGHT = r"""
+const highlights = __HIGHLIGHTS__;
+const expands = __EXPANDS__;
 
-JS_EXPAND_HIGHLIGHT = """
-const highlights = {highlights};
-const expands = {expands};
-
-document.querySelectorAll('.jblock').forEach(
-  el => el.classList.add('collapsed')
-);
+document.querySelectorAll('.jblock').forEach(el => el.classList.add('collapsed'));
 
 expands.forEach(p => {
-  const el = document.querySelector(`[data-jpath="${"{"}p{"}"}"]`);
+  const el = document.querySelector(`[data-jpath="${p}"]`);
   if (el) el.classList.remove('collapsed');
 });
 
 highlights.forEach(p => {
-  const el = document.querySelector(`[data-jpath="${"{"}p{"}"}"]`);
+  const el = document.querySelector(`[data-jpath="${p}"]`);
   if (el) el.classList.add('jhighlight');
 });
 """
@@ -41,8 +37,6 @@ document.querySelectorAll('.jblock').forEach(
   el => el.classList.remove('collapsed')
 );
 """
-
-# ---------------------------------------------------------------------------
 
 _EXECUTOR = ThreadPoolExecutor(max_workers=2)
 
@@ -271,9 +265,10 @@ class JSONPreview:
         def on_load_finished(webview: WebView, load_event: LoadEvent):
             if load_event == LoadEvent.FINISHED:
                 if expr:
-                    js = JS_EXPAND_HIGHLIGHT.format(
-                        highlights=dumps(highlights),
-                        expands=dumps(list(expands)),
+                    js = (
+                        JS_EXPAND_HIGHLIGHT
+                        .replace("__HIGHLIGHTS__", dumps(highlights))
+                        .replace("__EXPANDS__", dumps(list(expands)))
                     )
                     webview.run_javascript(js)
                 else:
