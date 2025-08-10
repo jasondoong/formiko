@@ -81,19 +81,6 @@ class JSONPreview:
         """
 
         def _task():
-            def collect_paths(val, path=""):
-                """Collect all JSON paths for expansion when no filter is applied."""
-                paths = {path}
-                if isinstance(val, dict):
-                    for k, v in val.items():
-                        new_path = f"{path}.{k}" if path else k
-                        paths |= collect_paths(v, new_path)
-                elif isinstance(val, list):
-                    for i, v in enumerate(val):
-                        new_path = f"{path}.[{i}]" if path else f"[{i}]"
-                        paths |= collect_paths(v, new_path)
-                return paths
-
             if not expression or not expression.strip():
                 return self._json_data, [], {""}, ""
 
@@ -106,20 +93,37 @@ class JSONPreview:
             except Exception as e:
                 # Wrap other exceptions into JsonPathParserError for unified handling
                 raise JsonPathParserError("Filter error") from e
-            else:
-                highlights: list[str] = []
-                expands: set[str] = {""}  # Always expand the root
-                for m in matches:
-                    current = m
-                    while current:
-                        p = str(current.full_path)
-                        if p == "$":
-                            p = ""
-                        expands.add(p)
-                        current = current.context
-                    p = str(m.full_path)
-                    highlights.append("" if p == "$" else p)
-                return self._json_data, highlights, expands, expression
+                
+            def collect_descendant_paths(val, base_path=""):
+                paths = {base_path}
+                if isinstance(val, dict):
+                    for k, v in val.items():
+                        child = f"{base_path}.{k}" if base_path else k
+                        paths |= collect_descendant_paths(v, child)
+                elif isinstance(val, list):
+                    for i, v in enumerate(val):
+                        child = f"{base_path}.[{i}]" if base_path else f"[{i}]"
+                        paths |= collect_descendant_paths(v, child)
+                return paths
+
+            highlights: list[str] = []
+            expands: set[str] = {""}  # Always expand the root
+            for m in matches:
+                current = m
+                while current:
+                    p = str(current.full_path)
+                    if p == "$":
+                        p = ""
+                    expands.add(p)
+                    current = current.context
+
+                # expand the matched node and all its descendants*
+                p = str(m.full_path)
+                p = "" if p == "$" else p
+                expands |= collect_descendant_paths(m.value, p)
+                highlights.append("" if p == "$" else p)
+
+            return self._json_data, highlights, expands, expression
 
         def _done(fut):
             try:
