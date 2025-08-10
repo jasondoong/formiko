@@ -10,6 +10,7 @@ Version dev
   * JSON preview: add collapsible folding view (closes #XX)
   * JSON preview: add json path filter
 
+
 Version 1.5.0
 
   * fix local url with href anchor
